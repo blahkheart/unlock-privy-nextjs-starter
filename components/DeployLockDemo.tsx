@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useDeployLock } from "@/hooks/unlock";
 import { parseEther, zeroAddress, type Address } from "viem";
+import { ErrorMessage } from "./ui/ErrorMessage";
 
 export const DeployLockDemo = () => {
   const { deployLock, isLoading, error, isSuccess } = useDeployLock();
@@ -136,16 +137,9 @@ export const DeployLockDemo = () => {
         </button>
 
         {error && (
-          <div style={{
-            padding: "0.75rem",
-            backgroundColor: "#fee2e2",
-            border: "1px solid #fecaca",
-            borderRadius: "4px",
-            color: "#991b1b",
-            fontSize: "0.875rem",
-          }}>
+          <ErrorMessage>
             <strong>Error:</strong> {error}
-          </div>
+          </ErrorMessage>
         )}
 
         {isSuccess && result && (

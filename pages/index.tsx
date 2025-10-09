@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { usePrivy } from "@privy-io/react-auth";
 import { useRouter } from "next/router";
 import Head from "next/head";
+import { getClientConfig } from "@/lib/blockchain/config";
 
 /**
  * Landing page with authentication
@@ -10,6 +11,7 @@ import Head from "next/head";
 export default function Home() {
   const router = useRouter();
   const { ready, authenticated, login } = usePrivy();
+  const chainConfig = getClientConfig();
 
   // Redirect authenticated users to examples page
   useEffect(() => {
@@ -48,9 +50,14 @@ export default function Home() {
           {/* Hero Section */}
           <div className="max-w-4xl mx-auto text-center space-y-8">
             <div className="space-y-4">
-              <h1 className="text-5xl sm:text-6xl font-bold bg-gradient-to-r from-blue-500 to-purple-500 bg-clip-text text-transparent">
-                Unlock Protocol × Privy
-              </h1>
+              <div className="flex flex-col items-center gap-3">
+                <h1 className="text-5xl sm:text-6xl font-bold bg-gradient-to-r from-blue-500 to-purple-500 bg-clip-text text-transparent">
+                  Unlock Protocol × Privy
+                </h1>
+                <span className="px-4 py-1.5 bg-blue-500/10 text-blue-300 rounded-full text-sm font-semibold border border-blue-500/20">
+                  {chainConfig.name} (Chain {chainConfig.chainId})
+                </span>
+              </div>
               <p className="text-xl text-gray-400">
                 Next.js Starter Template
               </p>

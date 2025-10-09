@@ -1,6 +1,7 @@
 import type { AppProps } from "next/app";
 import Head from "next/head";
 import { PrivyProvider } from "@privy-io/react-auth";
+import "../styles/globals.css";
 
 /**
  * Custom App component.

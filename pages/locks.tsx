@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
+import type React from "react";
 import Head from "next/head";
 import { useRouter } from "next/router";
 import { usePrivy, useWallets } from "@privy-io/react-auth";
 import { ethers } from "ethers";
 import UnlockABI from "../abis/UnlockV14.json";
 import PublicLockABI from "../abis/PublicLockV15.json";
+import { getClientConfig } from "@/lib/blockchain/config";
 
 /**
  * LocksPage - Elegant interface for Unlock Protocol contract interactions
@@ -14,6 +16,7 @@ export default function LocksPage() {
   const router = useRouter();
   const { ready, authenticated, user, logout } = usePrivy();
   const { wallets } = useWallets();
+  const chainConfig = getClientConfig();
 
   const [signer, setSigner] = useState<ethers.Signer | null>(null);
   const [unlockContract, setUnlockContract] = useState<ethers.Contract | null>(null);
@@ -231,42 +234,105 @@ export default function LocksPage() {
     return null;
   }
 
+  // Minimal, glassy UI primitives for consistency
+  const SectionCard: React.FC<React.PropsWithChildren<{ className?: string }>> = ({ className, children }) => (
+    <div
+      className={[
+        "mb-6 rounded-2xl border border-white/10 bg-white/5 backdrop-blur-xl",
+        "shadow-[0_0_0_1px_rgba(255,255,255,0.02),0_10px_30px_-10px_rgba(0,0,0,0.6)]",
+        className || "",
+      ].join(" ")}
+    >
+      {children}
+    </div>
+  );
+
+  const Label: React.FC<React.PropsWithChildren> = ({ children }) => (
+    <label className="block text-[13px] font-medium text-gray-300 mb-1.5">{children}</label>
+  );
+
+  const inputBase =
+    "w-full px-4 h-11 rounded-lg bg-white/5 border border-white/10 focus:outline-none focus:ring-2 focus:ring-blue-500/40 text-[15px] transition-all placeholder:text-gray-500";
+
+  const TextField = ({
+    label,
+    value,
+    onChange,
+    placeholder,
+    type = "text",
+    mono = false,
+  }: {
+    label: string;
+    value: string;
+    onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+    placeholder?: string;
+    type?: string;
+    mono?: boolean;
+  }) => (
+    <div>
+      <Label>{label}</Label>
+      <input
+        value={value}
+        onChange={onChange}
+        placeholder={placeholder}
+        type={type}
+        className={[inputBase, mono ? "font-mono text-sm" : ""].join(" ")}
+      />
+    </div>
+  );
+
   return (
     <>
       <Head>
         <title>Manage Locks · Unlock × Privy</title>
       </Head>
-      <main className="min-h-screen bg-gradient-to-br from-gray-950 via-gray-900 to-gray-950 text-white py-8 px-4">
-        <div className="max-w-6xl mx-auto">
+      <main className="relative min-h-screen text-white">
+        <div className="pointer-events-none absolute inset-0 -z-10" aria-hidden="true">
+          <div className="absolute inset-0 bg-gradient-to-br from-[#0b0f1a] via-[#0a0d17] to-[#070a12]" />
+          <div
+            className="absolute inset-0 opacity-[0.07]"
+            style={{
+              backgroundImage:
+                "radial-gradient(600px 200px at 10% 0%, rgba(59,130,246,0.18) 0%, transparent 60%), radial-gradient(800px 300px at 120% 40%, rgba(168,85,247,0.15) 0%, transparent 70%)",
+            }}
+          />
+          {/* subtle grain could be added via CSS if desired */}
+        </div>
+        <div className="max-w-6xl mx-auto px-4 py-6 sm:py-10">
           {/* Header */}
-          <div className="mb-8 backdrop-blur-xl bg-white/5 rounded-2xl border border-white/10 p-6 shadow-2xl">
+          <SectionCard className="mb-8 p-5 sm:p-6">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
               <div>
-                <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent mb-2">
-                  Lock Management
-                </h1>
-                <p className="text-gray-400 text-sm">
+                <div className="flex items-center gap-3 mb-1">
+                  <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
+                    Lock Management
+                  </h1>
+                  <span className="px-3 py-1 bg-blue-500/10 text-blue-300 rounded-full text-xs font-semibold border border-blue-500/20">
+                    {chainConfig.name} (Chain {chainConfig.chainId})
+                  </span>
+                </div>
+                <p className="text-gray-400 text-xs sm:text-sm">
                   Signed in as: {user?.email?.address || user?.wallet?.address || "anonymous"}
                 </p>
               </div>
               <button
                 onClick={logout}
-                className="px-6 py-2.5 bg-gradient-to-r from-red-500/20 to-pink-500/20 hover:from-red-500/30 hover:to-pink-500/30 border border-red-500/30 rounded-lg transition-all duration-200 text-sm font-medium"
+                className="h-10 px-4 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 transition-all text-sm"
               >
                 Logout
               </button>
             </div>
-          </div>
+          </SectionCard>
 
           {/* Status Notification */}
           {status && (
-            <div className="mb-6 backdrop-blur-xl bg-blue-500/10 border border-blue-500/30 rounded-xl p-4 shadow-lg animate-fade-in">
+            <SectionCard className="p-4 border-blue-400/25 bg-blue-500/10">
               <p className="text-blue-200 text-sm">{status}</p>
-            </div>
+            </SectionCard>
           )}
 
           {/* Create Lock Section */}
-          <div className="mb-6 backdrop-blur-xl bg-white/5 rounded-2xl border border-white/10 p-6 shadow-2xl">
+          <SectionCard className="p-5 sm:p-6">
             <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
               <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
               Create New Lock
@@ -338,27 +404,27 @@ export default function LocksPage() {
               <div className="flex flex-wrap gap-3 pt-2">
                 <button
                   onClick={handleCreateLock}
-                  className="px-6 py-2.5 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 rounded-lg transition-all duration-200 shadow-lg hover:shadow-xl transform hover:scale-105 font-medium"
+                  className="h-11 px-5 rounded-lg border border-blue-400/30 bg-blue-500/10 hover:bg-blue-500/20 transition-colors font-medium"
                 >
                   Create Lock
                 </button>
                 <button
                   onClick={handleCreateUpgradeableLock}
-                  className="px-6 py-2.5 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 rounded-lg transition-all duration-200 shadow-lg hover:shadow-xl transform hover:scale-105 font-medium"
+                  className="h-11 px-5 rounded-lg border border-purple-400/30 bg-purple-500/10 hover:bg-purple-500/20 transition-colors font-medium"
                 >
-                  Create Upgradeable Lock
+                  Create Upgradeable (v{lockVersion})
                 </button>
               </div>
             </div>
-          </div>
+          </SectionCard>
 
           {/* Update Lock Section */}
-          <div className="mb-6 backdrop-blur-xl bg-white/5 rounded-2xl border border-white/10 p-6 shadow-2xl">
+          <SectionCard className="p-5 sm:p-6">
             <h2 className="text-xl font-semibold mb-2 flex items-center gap-2">
               <span className="w-2 h-2 bg-purple-500 rounded-full"></span>
               Update Lock
             </h2>
-            <p className="text-gray-400 text-sm mb-4">You'll be prompted for the lock address when performing these actions.</p>
+            <p className="text-gray-400 text-xs sm:text-sm mb-4">You'll be prompted for the lock address when performing these actions.</p>
             <div className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
@@ -401,27 +467,27 @@ export default function LocksPage() {
               <div className="flex flex-wrap gap-3 pt-2">
                 <button
                   onClick={handleUpdateKeyPricing}
-                  className="px-6 py-2.5 bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/30 rounded-lg transition-all duration-200 font-medium"
+                  className="h-11 px-5 rounded-lg border border-purple-400/30 bg-purple-500/10 hover:bg-purple-500/20 transition-colors font-medium"
                 >
                   Update Pricing
                 </button>
                 <button
                   onClick={handleUpdateLockConfig}
-                  className="px-6 py-2.5 bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/30 rounded-lg transition-all duration-200 font-medium"
+                  className="h-11 px-5 rounded-lg border border-purple-400/30 bg-purple-500/10 hover:bg-purple-500/20 transition-colors font-medium"
                 >
                   Update Config
                 </button>
               </div>
             </div>
-          </div>
+          </SectionCard>
 
           {/* Grant Keys Section */}
-          <div className="mb-6 backdrop-blur-xl bg-white/5 rounded-2xl border border-white/10 p-6 shadow-2xl">
+          <SectionCard className="p-5 sm:p-6">
             <h2 className="text-xl font-semibold mb-2 flex items-center gap-2">
               <span className="w-2 h-2 bg-green-500 rounded-full"></span>
               Grant Keys
             </h2>
-            <p className="text-gray-400 text-sm mb-4">Enter comma-separated values for recipients, expirations, and managers.</p>
+            <p className="text-gray-400 text-xs sm:text-sm mb-4">Enter comma-separated values for recipients, expirations, and managers.</p>
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-300 mb-2">Recipients</label>
@@ -452,15 +518,15 @@ export default function LocksPage() {
               </div>
               <button
                 onClick={handleGrantKeys}
-                className="px-6 py-2.5 bg-green-600/20 hover:bg-green-600/30 border border-green-500/30 rounded-lg transition-all duration-200 font-medium"
+                className="h-11 px-5 rounded-lg border border-green-400/30 bg-green-500/10 hover:bg-green-500/20 transition-colors font-medium"
               >
                 Grant Keys
               </button>
             </div>
-          </div>
+          </SectionCard>
 
           {/* Extend Membership Section */}
-          <div className="mb-6 backdrop-blur-xl bg-white/5 rounded-2xl border border-white/10 p-6 shadow-2xl">
+          <SectionCard className="p-5 sm:p-6">
             <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
               <span className="w-2 h-2 bg-yellow-500 rounded-full"></span>
               Extend Membership
@@ -506,7 +572,7 @@ export default function LocksPage() {
               <div className="flex flex-wrap gap-3 pt-2">
                 <button
                   onClick={handleExtend}
-                  className="px-6 py-2.5 bg-yellow-600/20 hover:bg-yellow-600/30 border border-yellow-500/30 rounded-lg transition-all duration-200 font-medium"
+                  className="h-11 px-5 rounded-lg border border-yellow-400/30 bg-yellow-500/10 hover:bg-yellow-500/20 transition-colors font-medium"
                 >
                   Extend Key
                 </button>
@@ -525,16 +591,16 @@ export default function LocksPage() {
                       setStatus(err.message || "Error granting extension");
                     }
                   }}
-                  className="px-6 py-2.5 bg-yellow-600/20 hover:bg-yellow-600/30 border border-yellow-500/30 rounded-lg transition-all duration-200 font-medium"
+                  className="h-11 px-5 rounded-lg border border-yellow-400/30 bg-yellow-500/10 hover:bg-yellow-500/20 transition-colors font-medium"
                 >
                   Grant Extension
                 </button>
               </div>
             </div>
-          </div>
+          </SectionCard>
 
           {/* Lend/Unlend Section */}
-          <div className="backdrop-blur-xl bg-white/5 rounded-2xl border border-white/10 p-6 shadow-2xl">
+          <SectionCard className="p-5 sm:p-6 mb-10">
             <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
               <span className="w-2 h-2 bg-pink-500 rounded-full"></span>
               Lend / Unlend Key
@@ -571,19 +637,19 @@ export default function LocksPage() {
               <div className="flex flex-wrap gap-3 pt-2">
                 <button
                   onClick={handleLendKey}
-                  className="px-6 py-2.5 bg-pink-600/20 hover:bg-pink-600/30 border border-pink-500/30 rounded-lg transition-all duration-200 font-medium"
+                  className="h-11 px-5 rounded-lg border border-pink-400/30 bg-pink-500/10 hover:bg-pink-500/20 transition-colors font-medium"
                 >
                   Lend Key
                 </button>
                 <button
                   onClick={handleUnlendKey}
-                  className="px-6 py-2.5 bg-pink-600/20 hover:bg-pink-600/30 border border-pink-500/30 rounded-lg transition-all duration-200 font-medium"
+                  className="h-11 px-5 rounded-lg border border-pink-400/30 bg-pink-500/10 hover:bg-pink-500/20 transition-colors font-medium"
                 >
                   Unlend Key
                 </button>
               </div>
             </div>
-          </div>
+          </SectionCard>
         </div>
       </main>
     </>

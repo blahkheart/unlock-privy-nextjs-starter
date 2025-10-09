@@ -3,6 +3,7 @@ import { useKeyPurchase } from "@/hooks/unlock";
 import { useSmartWalletSelection } from "@/hooks/useSmartWalletSelection";
 import { formatWalletAddress } from "@/lib/utils/wallet-address";
 import { getLogger } from "@/lib/utils/logger";
+import { ErrorMessage } from "./ui/ErrorMessage";
 
 const log = getLogger("components:key-purchase-example");
 
@@ -90,16 +91,9 @@ export function KeyPurchaseExample() {
         </button>
 
         {error && (
-          <div style={{
-            padding: "0.75rem",
-            backgroundColor: "#FEE2E2",
-            border: "1px solid #FCA5A5",
-            borderRadius: "0.375rem",
-            fontSize: "0.875rem",
-            color: "#991B1B",
-          }}>
+          <ErrorMessage>
             ❌ {error}
-          </div>
+          </ErrorMessage>
         )}
 
         {isSuccess && lastTxHash && (

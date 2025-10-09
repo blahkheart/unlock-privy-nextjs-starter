@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useAddLockManager, useLockManagerKeyGrant } from "@/hooks/unlock";
 import { type Address } from "viem";
+import { ErrorMessage } from "./ui/ErrorMessage";
 
 export const LockManagerDemo = () => {
   const { addLockManager, isLoading: isAddingManager, error: addManagerError, isSuccess: addManagerSuccess } = useAddLockManager();
@@ -122,16 +123,9 @@ export const LockManagerDemo = () => {
           </button>
 
           {addManagerError && (
-            <div style={{
-              padding: "0.75rem",
-              backgroundColor: "#fee2e2",
-              border: "1px solid #fecaca",
-              borderRadius: "4px",
-              color: "#991b1b",
-              fontSize: "0.875rem",
-            }}>
+            <ErrorMessage>
               <strong>Error:</strong> {addManagerError}
-            </div>
+            </ErrorMessage>
           )}
 
           {addManagerSuccess && addManagerTxHash && (
@@ -240,16 +234,9 @@ export const LockManagerDemo = () => {
           </button>
 
           {grantKeyError && (
-            <div style={{
-              padding: "0.75rem",
-              backgroundColor: "#fee2e2",
-              border: "1px solid #fecaca",
-              borderRadius: "4px",
-              color: "#991b1b",
-              fontSize: "0.875rem",
-            }}>
+            <ErrorMessage>
               <strong>Error:</strong> {grantKeyError}
-            </div>
+            </ErrorMessage>
           )}
 
           {grantKeySuccess && grantKeyTxHash && (

@@ -7,6 +7,7 @@ import { WalletInfo } from "@/components/WalletInfo";
 import { UnlockReadOperationsDemo } from "@/components/UnlockReadOperationsDemo";
 import { DeployLockDemo } from "@/components/DeployLockDemo";
 import { LockManagerDemo } from "@/components/LockManagerDemo";
+import { getClientConfig } from "@/lib/blockchain/config";
 
 /**
  * Examples page demonstrating the new hooks and utilities
@@ -19,6 +20,7 @@ import { LockManagerDemo } from "@/components/LockManagerDemo";
 export default function ExamplesPage() {
   const router = useRouter();
   const { ready, authenticated, user, logout } = usePrivy();
+  const chainConfig = getClientConfig();
 
   // Redirect unauthenticated users to login page
   useEffect(() => {
@@ -47,9 +49,22 @@ export default function ExamplesPage() {
           borderBottom: "2px solid #E5E7EB"
         }}>
           <div>
-            <h1 style={{ fontSize: "2rem", fontWeight: "700", marginBottom: "0.5rem" }}>
-              Enhanced Features Examples
-            </h1>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "0.5rem" }}>
+              <h1 style={{ fontSize: "2rem", fontWeight: "700", margin: 0 }}>
+                Enhanced Features Examples
+              </h1>
+              <span style={{
+                padding: "0.25rem 0.75rem",
+                backgroundColor: "#DBEAFE",
+                color: "#1E40AF",
+                borderRadius: "9999px",
+                fontSize: "0.75rem",
+                fontWeight: "600",
+                border: "1px solid #93C5FD"
+              }}>
+                {chainConfig.name} (Chain {chainConfig.chainId})
+              </span>
+            </div>
             <p style={{ color: "#6B7280", fontSize: "0.875rem" }}>
               Signed in as: {user?.email?.address || user?.wallet?.address || "anonymous"}
             </p>
