@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import { useSmartWalletSelection } from "./useSmartWalletSelection";
+import { useSmartWalletSelection } from "@/hooks/useSmartWalletSelection";
 import { createViemFromPrivyWallet } from "@/lib/blockchain/providers/privy-viem";
 import { COMPLETE_LOCK_ABI, ERC20_ABI } from "@/lib/blockchain/shared/abi-definitions";
 import { extractTokenIdsFromReceipt } from "@/lib/blockchain/shared/transaction-utils";
