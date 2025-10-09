@@ -2,11 +2,20 @@ import { useEffect, useState } from "react";
 import type React from "react";
 import Head from "next/head";
 import { useRouter } from "next/router";
-import { usePrivy, useWallets } from "@privy-io/react-auth";
-import { ethers } from "ethers";
-import UnlockABI from "../abis/UnlockV14.json";
-import PublicLockABI from "../abis/PublicLockV15.json";
+import { usePrivy } from "@privy-io/react-auth";
 import { getClientConfig } from "@/lib/blockchain/config";
+import { parseEther, zeroAddress, type Address } from "viem";
+import { ErrorMessage } from "@/components/ui/ErrorMessage";
+import {
+  useDeployLock,
+  useUpdateKeyPricing,
+  useUpdateLockConfig,
+  useGrantKeys,
+  useExtendKey,
+  useLendKey,
+  useUnlendKey,
+  useGrantKeyExtension,
+} from "@/hooks/unlock";
 
 /**
  * LocksPage - Elegant interface for Unlock Protocol contract interactions
@@ -15,11 +24,17 @@ import { getClientConfig } from "@/lib/blockchain/config";
 export default function LocksPage() {
   const router = useRouter();
   const { ready, authenticated, user, logout } = usePrivy();
-  const { wallets } = useWallets();
   const chainConfig = getClientConfig();
 
-  const [signer, setSigner] = useState<ethers.Signer | null>(null);
-  const [unlockContract, setUnlockContract] = useState<ethers.Contract | null>(null);
+  // Initialize all hooks
+  const deployLock = useDeployLock();
+  const updatePricing = useUpdateKeyPricing();
+  const updateConfig = useUpdateLockConfig();
+  const grantKeys = useGrantKeys();
+  const extendKey = useExtendKey();
+  const lendKey = useLendKey();
+  const unlendKey = useUnlendKey();
+  const grantExtension = useGrantKeyExtension();
 
   // Lock creation form inputs
   const [lockName, setLockName] = useState("Example Lock");
@@ -49,27 +64,11 @@ export default function LocksPage() {
   const [fromAddress, setFromAddress] = useState("");
   const [toAddress, setToAddress] = useState("");
 
-  const unlockAddress = process.env.NEXT_PUBLIC_UNLOCK_ADDRESS;
-
-  useEffect(() => {
-    const initSigner = async () => {
-      if (!ready || !authenticated || !wallets || wallets.length === 0) return;
-      try {
-        const wallet = wallets[0];
-        const privyProvider = await wallet.getEthereumProvider();
-        const ethersProvider = new ethers.BrowserProvider(privyProvider);
-        const signer = await ethersProvider.getSigner();
-        setSigner(signer);
-        if (unlockAddress) {
-          const unlock = new ethers.Contract(unlockAddress, (UnlockABI as any).abi || (UnlockABI as any), signer);
-          setUnlockContract(unlock);
-        }
-      } catch (error) {
-        console.error("Error getting signer", error);
-      }
-    };
-    initSigner();
-  }, [ready, authenticated, wallets, unlockAddress]);
+  // Lock addresses for operations (removed prompt-based approach)
+  const [updateLockAddress, setUpdateLockAddress] = useState("");
+  const [grantKeysLockAddress, setGrantKeysLockAddress] = useState("");
+  const [extendLockAddress, setExtendLockAddress] = useState("");
+  const [lendLockAddress, setLendLockAddress] = useState("");
 
   useEffect(() => {
     if (ready && !authenticated) {
@@ -77,156 +76,149 @@ export default function LocksPage() {
     }
   }, [ready, authenticated, router]);
 
-  const encodeInitialize = (
-    creator: string,
-    expiration: bigint,
-    token: string,
-    price: bigint,
-    maxKeys: bigint,
-    name: string
-  ) => {
-    const iface = new ethers.Interface((PublicLockABI as any).abi || (PublicLockABI as any));
-    return iface.encodeFunctionData("initialize", [creator, expiration, token, price, maxKeys, name]);
-  };
+  // Handler: Deploy Lock (Upgradeable)
+  const handleDeployLock = async () => {
+    const result = await deployLock.deployLock({
+      name: lockName,
+      expirationDuration: BigInt(expirationDuration),
+      tokenAddress: (tokenAddress || zeroAddress) as Address,
+      keyPrice: BigInt(keyPrice),
+      maxNumberOfKeys: BigInt(maxNumberOfKeys),
+      lockVersion: Number(lockVersion),
+    });
 
-  const handleCreateUpgradeableLock = async () => {
-    if (!unlockContract || !signer) return;
-    try {
-      setStatus("Deploying upgradeable lock...");
-      const creator = await signer.getAddress();
-      const calldata = encodeInitialize(
-        creator,
-        BigInt(expirationDuration),
-        tokenAddress,
-        BigInt(keyPrice),
-        BigInt(maxNumberOfKeys),
-        lockName
-      );
-      const tx = await unlockContract.createUpgradeableLockAtVersion(calldata, BigInt(lockVersion));
-      await tx.wait();
-      setStatus(`Lock deployed at tx ${tx.hash}`);
-    } catch (err: any) {
-      console.error(err);
-      setStatus(err.message || "Error deploying lock");
+    if (result.success) {
+      setStatus(`Lock deployed at ${result.lockAddress} (tx: ${result.transactionHash})`);
     }
   };
 
-  const handleCreateLock = async () => {
-    if (!unlockContract || !signer) return;
-    try {
-      setStatus("Deploying lock...");
-      const tx = await unlockContract.createLock(
-        BigInt(expirationDuration),
-        tokenAddress,
-        BigInt(keyPrice),
-        BigInt(maxNumberOfKeys),
-        lockName,
-        ethers.toBeHex(0)
-      );
-      await tx.wait();
-      setStatus(`Lock deployed at tx ${tx.hash}`);
-    } catch (err: any) {
-      console.error(err);
-      setStatus(err.message || "Error deploying lock");
-    }
-  };
-
+  // Handler: Update Key Pricing
   const handleUpdateKeyPricing = async () => {
-    const lockAddress = prompt("Enter the lock address to update pricing:");
-    if (!signer || !lockAddress) return;
-    try {
-      setStatus("Updating key pricing...");
-      const lock = new ethers.Contract(lockAddress, (PublicLockABI as any).abi || (PublicLockABI as any), signer);
-      const tx = await lock.updateKeyPricing(BigInt(newPrice), tokenAddress);
-      await tx.wait();
-      setStatus(`Key price updated in tx ${tx.hash}`);
-    } catch (err: any) {
-      console.error(err);
-      setStatus(err.message || "Error updating pricing");
+    if (!updateLockAddress) {
+      setStatus("Please enter a lock address");
+      return;
+    }
+    const result = await updatePricing.updateKeyPricing({
+      lockAddress: updateLockAddress as Address,
+      keyPrice: BigInt(newPrice),
+      tokenAddress: (tokenAddress || zeroAddress) as Address,
+    });
+
+    if (result.success) {
+      setStatus(`Pricing updated (tx: ${result.transactionHash})`);
     }
   };
 
+  // Handler: Update Lock Config
   const handleUpdateLockConfig = async () => {
-    const lockAddress = prompt("Enter the lock address to update config:");
-    if (!signer || !lockAddress) return;
-    try {
-      setStatus("Updating lock config...");
-      const lock = new ethers.Contract(lockAddress, (PublicLockABI as any).abi || (PublicLockABI as any), signer);
-      const tx = await lock.updateLockConfig(
-        BigInt(newExpirationDuration),
-        BigInt(newMaxNumberOfKeys),
-        BigInt(newMaxKeysPerAccount)
-      );
-      await tx.wait();
-      setStatus(`Config updated in tx ${tx.hash}`);
-    } catch (err: any) {
-      console.error(err);
-      setStatus(err.message || "Error updating lock config");
+    if (!updateLockAddress) {
+      setStatus("Please enter a lock address");
+      return;
+    }
+    const result = await updateConfig.updateLockConfig({
+      lockAddress: updateLockAddress as Address,
+      expirationDuration: BigInt(newExpirationDuration),
+      maxNumberOfKeys: BigInt(newMaxNumberOfKeys),
+      maxKeysPerAccount: BigInt(newMaxKeysPerAccount),
+    });
+
+    if (result.success) {
+      setStatus(`Config updated (tx: ${result.transactionHash})`);
     }
   };
 
+  // Handler: Grant Keys (Bulk)
   const handleGrantKeys = async () => {
-    const lockAddress = prompt("Enter the lock address to grant keys on:");
-    if (!signer || !lockAddress) return;
-    try {
-      setStatus("Granting keys...");
-      const lock = new ethers.Contract(lockAddress, (PublicLockABI as any).abi || (PublicLockABI as any), signer);
-      const recipientsArray = recipients.split(",").map((addr) => addr.trim());
-      const expirationArray = expirationTimestamps
-        .split(",")
-        .map((ts) => (ts.trim() ? BigInt(ts.trim()) : BigInt(0)));
-      const managersArray = keyManagers.split(",").map((addr) => addr.trim());
-      const tx = await lock.grantKeys(recipientsArray, expirationArray, managersArray);
-      await tx.wait();
-      setStatus(`Keys granted in tx ${tx.hash}`);
-    } catch (err: any) {
-      console.error(err);
-      setStatus(err.message || "Error granting keys");
+    if (!grantKeysLockAddress) {
+      setStatus("Please enter a lock address");
+      return;
+    }
+    const recipientsArray = recipients.split(",").map((addr) => addr.trim() as Address);
+    const expirationArray = expirationTimestamps
+      .split(",")
+      .map((ts) => (ts.trim() ? BigInt(ts.trim()) : BigInt(0)));
+    const managersArray = keyManagers.split(",").map((addr) => addr.trim() as Address);
+
+    const result = await grantKeys.grantKeys({
+      lockAddress: grantKeysLockAddress as Address,
+      recipients: recipientsArray,
+      expirationTimestamps: expirationArray,
+      keyManagers: managersArray,
+    });
+
+    if (result.success) {
+      setStatus(`Keys granted (tx: ${result.transactionHash}, tokens: ${result.tokenIds?.join(", ") || "N/A"})`);
     }
   };
 
+  // Handler: Extend Key
   const handleExtend = async () => {
-    const lockAddress = prompt("Enter the lock address to extend a key on:");
-    if (!signer || !lockAddress) return;
-    try {
-      setStatus("Extending key...");
-      const lock = new ethers.Contract(lockAddress, (PublicLockABI as any).abi || (PublicLockABI as any), signer);
-      const tx = await lock.extend(BigInt(extendValue), BigInt(tokenId), referrer, "0x");
-      await tx.wait();
-      setStatus(`Key extended in tx ${tx.hash}`);
-    } catch (err: any) {
-      console.error(err);
-      setStatus(err.message || "Error extending key");
+    if (!extendLockAddress) {
+      setStatus("Please enter a lock address");
+      return;
+    }
+    const result = await extendKey.extendKey({
+      lockAddress: extendLockAddress as Address,
+      value: BigInt(extendValue),
+      tokenId: BigInt(tokenId),
+      referrer: (referrer || zeroAddress) as Address,
+      data: "0x",
+    });
+
+    if (result.success) {
+      setStatus(`Key extended (tx: ${result.transactionHash})`);
     }
   };
 
+  // Handler: Grant Key Extension (Lock Manager)
+  const handleGrantExtension = async () => {
+    if (!extendLockAddress) {
+      setStatus("Please enter a lock address");
+      return;
+    }
+    const result = await grantExtension.grantKeyExtension({
+      lockAddress: extendLockAddress as Address,
+      tokenId: BigInt(tokenId),
+      duration: BigInt(duration),
+    });
+
+    if (result.success) {
+      setStatus(`Extension granted (tx: ${result.transactionHash})`);
+    }
+  };
+
+  // Handler: Lend Key
   const handleLendKey = async () => {
-    const lockAddress = prompt("Enter the lock address to lend a key on:");
-    if (!signer || !lockAddress) return;
-    try {
-      setStatus("Lending key...");
-      const lock = new ethers.Contract(lockAddress, (PublicLockABI as any).abi || (PublicLockABI as any), signer);
-      const tx = await lock.lendKey(fromAddress, toAddress, BigInt(tokenId));
-      await tx.wait();
-      setStatus(`Key lent in tx ${tx.hash}`);
-    } catch (err: any) {
-      console.error(err);
-      setStatus(err.message || "Error lending key");
+    if (!lendLockAddress) {
+      setStatus("Please enter a lock address");
+      return;
+    }
+    const result = await lendKey.lendKey({
+      lockAddress: lendLockAddress as Address,
+      from: fromAddress as Address,
+      recipient: toAddress as Address,
+      tokenId: BigInt(tokenId),
+    });
+
+    if (result.success) {
+      setStatus(`Key lent (tx: ${result.transactionHash})`);
     }
   };
 
+  // Handler: Unlend Key
   const handleUnlendKey = async () => {
-    const lockAddress = prompt("Enter the lock address to unlend a key on:");
-    if (!signer || !lockAddress) return;
-    try {
-      setStatus("Unlending key...");
-      const lock = new ethers.Contract(lockAddress, (PublicLockABI as any).abi || (PublicLockABI as any), signer);
-      const tx = await lock.unlendKey(toAddress, BigInt(tokenId));
-      await tx.wait();
-      setStatus(`Key ownership returned in tx ${tx.hash}`);
-    } catch (err: any) {
-      console.error(err);
-      setStatus(err.message || "Error unlending key");
+    if (!lendLockAddress) {
+      setStatus("Please enter a lock address");
+      return;
+    }
+    const result = await unlendKey.unlendKey({
+      lockAddress: lendLockAddress as Address,
+      recipient: toAddress as Address,
+      tokenId: BigInt(tokenId),
+    });
+
+    if (result.success) {
+      setStatus(`Key returned (tx: ${result.transactionHash})`);
     }
   };
 
@@ -403,18 +395,19 @@ export default function LocksPage() {
 
               <div className="flex flex-wrap gap-3 pt-2">
                 <button
-                  onClick={handleCreateLock}
-                  className="h-11 px-5 rounded-lg border border-blue-400/30 bg-blue-500/10 hover:bg-blue-500/20 transition-colors font-medium"
+                  onClick={handleDeployLock}
+                  disabled={deployLock.isLoading}
+                  className="h-11 px-5 rounded-lg border border-purple-400/30 bg-purple-500/10 hover:bg-purple-500/20 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Create Lock
-                </button>
-                <button
-                  onClick={handleCreateUpgradeableLock}
-                  className="h-11 px-5 rounded-lg border border-purple-400/30 bg-purple-500/10 hover:bg-purple-500/20 transition-colors font-medium"
-                >
-                  Create Upgradeable (v{lockVersion})
+                  {deployLock.isLoading ? "Deploying..." : `Deploy Lock (v${lockVersion})`}
                 </button>
               </div>
+
+              {deployLock.error && (
+                <ErrorMessage>
+                  <strong>Error:</strong> {deployLock.error}
+                </ErrorMessage>
+              )}
             </div>
           </SectionCard>
 
@@ -424,8 +417,17 @@ export default function LocksPage() {
               <span className="w-2 h-2 bg-purple-500 rounded-full"></span>
               Update Lock
             </h2>
-            <p className="text-gray-400 text-xs sm:text-sm mb-4">You'll be prompted for the lock address when performing these actions.</p>
+            <p className="text-gray-400 text-xs sm:text-sm mb-4">Enter the lock address to update its settings.</p>
             <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Lock Address</label>
+                <input
+                  value={updateLockAddress}
+                  onChange={(e) => setUpdateLockAddress(e.target.value)}
+                  className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500/50 backdrop-blur-sm transition-all font-mono text-sm"
+                  placeholder="0x..."
+                />
+              </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-300 mb-2">New Key Price (wei)</label>
@@ -467,17 +469,25 @@ export default function LocksPage() {
               <div className="flex flex-wrap gap-3 pt-2">
                 <button
                   onClick={handleUpdateKeyPricing}
-                  className="h-11 px-5 rounded-lg border border-purple-400/30 bg-purple-500/10 hover:bg-purple-500/20 transition-colors font-medium"
+                  disabled={updatePricing.isLoading}
+                  className="h-11 px-5 rounded-lg border border-purple-400/30 bg-purple-500/10 hover:bg-purple-500/20 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Update Pricing
+                  {updatePricing.isLoading ? "Updating..." : "Update Pricing"}
                 </button>
                 <button
                   onClick={handleUpdateLockConfig}
-                  className="h-11 px-5 rounded-lg border border-purple-400/30 bg-purple-500/10 hover:bg-purple-500/20 transition-colors font-medium"
+                  disabled={updateConfig.isLoading}
+                  className="h-11 px-5 rounded-lg border border-purple-400/30 bg-purple-500/10 hover:bg-purple-500/20 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Update Config
+                  {updateConfig.isLoading ? "Updating..." : "Update Config"}
                 </button>
               </div>
+
+              {(updatePricing.error || updateConfig.error) && (
+                <ErrorMessage>
+                  <strong>Error:</strong> {updatePricing.error || updateConfig.error}
+                </ErrorMessage>
+              )}
             </div>
           </SectionCard>
 
@@ -485,10 +495,19 @@ export default function LocksPage() {
           <SectionCard className="p-5 sm:p-6">
             <h2 className="text-xl font-semibold mb-2 flex items-center gap-2">
               <span className="w-2 h-2 bg-green-500 rounded-full"></span>
-              Grant Keys
+              Grant Keys (Bulk)
             </h2>
-            <p className="text-gray-400 text-xs sm:text-sm mb-4">Enter comma-separated values for recipients, expirations, and managers.</p>
+            <p className="text-gray-400 text-xs sm:text-sm mb-4">Grant multiple keys at once with custom settings.</p>
             <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Lock Address</label>
+                <input
+                  value={grantKeysLockAddress}
+                  onChange={(e) => setGrantKeysLockAddress(e.target.value)}
+                  className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500/50 backdrop-blur-sm transition-all font-mono text-sm"
+                  placeholder="0x..."
+                />
+              </div>
               <div>
                 <label className="block text-sm font-medium text-gray-300 mb-2">Recipients</label>
                 <input
@@ -518,10 +537,17 @@ export default function LocksPage() {
               </div>
               <button
                 onClick={handleGrantKeys}
-                className="h-11 px-5 rounded-lg border border-green-400/30 bg-green-500/10 hover:bg-green-500/20 transition-colors font-medium"
+                disabled={grantKeys.isLoading}
+                className="h-11 px-5 rounded-lg border border-green-400/30 bg-green-500/10 hover:bg-green-500/20 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Grant Keys
+                {grantKeys.isLoading ? "Granting..." : "Grant Keys"}
               </button>
+
+              {grantKeys.error && (
+                <ErrorMessage>
+                  <strong>Error:</strong> {grantKeys.error}
+                </ErrorMessage>
+              )}
             </div>
           </SectionCard>
 
@@ -532,6 +558,15 @@ export default function LocksPage() {
               Extend Membership
             </h2>
             <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Lock Address</label>
+                <input
+                  value={extendLockAddress}
+                  onChange={(e) => setExtendLockAddress(e.target.value)}
+                  className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:ring-2 focus:ring-yellow-500/50 backdrop-blur-sm transition-all font-mono text-sm"
+                  placeholder="0x..."
+                />
+              </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-300 mb-2">Token ID</label>
@@ -572,30 +607,25 @@ export default function LocksPage() {
               <div className="flex flex-wrap gap-3 pt-2">
                 <button
                   onClick={handleExtend}
-                  className="h-11 px-5 rounded-lg border border-yellow-400/30 bg-yellow-500/10 hover:bg-yellow-500/20 transition-colors font-medium"
+                  disabled={extendKey.isLoading}
+                  className="h-11 px-5 rounded-lg border border-yellow-400/30 bg-yellow-500/10 hover:bg-yellow-500/20 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Extend Key
+                  {extendKey.isLoading ? "Extending..." : "Extend Key (Pay)"}
                 </button>
                 <button
-                  onClick={async () => {
-                    const lockAddress = prompt("Enter the lock address to grant a key extension:");
-                    if (!signer || !lockAddress) return;
-                    try {
-                      setStatus("Granting key extension...");
-                      const lock = new ethers.Contract(lockAddress, (PublicLockABI as any).abi || (PublicLockABI as any), signer);
-                      const tx = await lock.grantKeyExtension(BigInt(tokenId), BigInt(duration));
-                      await tx.wait();
-                      setStatus(`Key extension granted in tx ${tx.hash}`);
-                    } catch (err: any) {
-                      console.error(err);
-                      setStatus(err.message || "Error granting extension");
-                    }
-                  }}
-                  className="h-11 px-5 rounded-lg border border-yellow-400/30 bg-yellow-500/10 hover:bg-yellow-500/20 transition-colors font-medium"
+                  onClick={handleGrantExtension}
+                  disabled={grantExtension.isLoading}
+                  className="h-11 px-5 rounded-lg border border-yellow-400/30 bg-yellow-500/10 hover:bg-yellow-500/20 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Grant Extension
+                  {grantExtension.isLoading ? "Granting..." : "Grant Extension (Manager)"}
                 </button>
               </div>
+
+              {(extendKey.error || grantExtension.error) && (
+                <ErrorMessage>
+                  <strong>Error:</strong> {extendKey.error || grantExtension.error}
+                </ErrorMessage>
+              )}
             </div>
           </SectionCard>
 
@@ -606,6 +636,15 @@ export default function LocksPage() {
               Lend / Unlend Key
             </h2>
             <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Lock Address</label>
+                <input
+                  value={lendLockAddress}
+                  onChange={(e) => setLendLockAddress(e.target.value)}
+                  className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500/50 backdrop-blur-sm transition-all font-mono text-sm"
+                  placeholder="0x..."
+                />
+              </div>
               <div>
                 <label className="block text-sm font-medium text-gray-300 mb-2">Token ID</label>
                 <input
@@ -637,17 +676,25 @@ export default function LocksPage() {
               <div className="flex flex-wrap gap-3 pt-2">
                 <button
                   onClick={handleLendKey}
-                  className="h-11 px-5 rounded-lg border border-pink-400/30 bg-pink-500/10 hover:bg-pink-500/20 transition-colors font-medium"
+                  disabled={lendKey.isLoading}
+                  className="h-11 px-5 rounded-lg border border-pink-400/30 bg-pink-500/10 hover:bg-pink-500/20 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Lend Key
+                  {lendKey.isLoading ? "Lending..." : "Lend Key"}
                 </button>
                 <button
                   onClick={handleUnlendKey}
-                  className="h-11 px-5 rounded-lg border border-pink-400/30 bg-pink-500/10 hover:bg-pink-500/20 transition-colors font-medium"
+                  disabled={unlendKey.isLoading}
+                  className="h-11 px-5 rounded-lg border border-pink-400/30 bg-pink-500/10 hover:bg-pink-500/20 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Unlend Key
+                  {unlendKey.isLoading ? "Returning..." : "Unlend Key"}
                 </button>
               </div>
+
+              {(lendKey.error || unlendKey.error) && (
+                <ErrorMessage>
+                  <strong>Error:</strong> {lendKey.error || unlendKey.error}
+                </ErrorMessage>
+              )}
             </div>
           </SectionCard>
         </div>

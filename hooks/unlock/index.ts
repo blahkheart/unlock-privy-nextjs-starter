@@ -9,6 +9,13 @@ export { useKeyPurchase } from "./useKeyPurchase";
 export { useDeployLock } from "./useDeployLock";
 export { useAddLockManager } from "./useAddLockManager";
 export { useLockManagerKeyGrant } from "./useLockManagerKeyGrant";
+export { useUpdateKeyPricing } from "./useUpdateKeyPricing";
+export { useUpdateLockConfig } from "./useUpdateLockConfig";
+export { useGrantKeys } from "./useGrantKeys";
+export { useExtendKey } from "./useExtendKey";
+export { useLendKey } from "./useLendKey";
+export { useUnlendKey } from "./useUnlendKey";
+export { useGrantKeyExtension } from "./useGrantKeyExtension";
 
 // Utility hooks
 export { usePrivyWriteWallet } from "./usePrivyWriteWallet";
@@ -26,6 +33,20 @@ export type {
   KeyGrantResult,
   AddLockManagerParams,
   AddLockManagerResult,
+  UpdateKeyPricingParams,
+  UpdateKeyPricingResult,
+  UpdateLockConfigParams,
+  UpdateLockConfigResult,
+  GrantKeysParams,
+  GrantKeysResult,
+  ExtendKeyParams,
+  ExtendKeyResult,
+  LendKeyParams,
+  LendKeyResult,
+  UnlendKeyParams,
+  UnlendKeyResult,
+  GrantKeyExtensionParams,
+  GrantKeyExtensionResult,
   OperationState,
 } from "./types";
 

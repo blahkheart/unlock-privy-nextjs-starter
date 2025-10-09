@@ -110,7 +110,7 @@ export default function ExamplesPage() {
           marginBottom: "2rem",
         }}>
           <h2 style={{ fontSize: "1.25rem", fontWeight: "600", marginBottom: "0.75rem", color: "#4338CA" }}>
-            🚀 What's New?
+            🚀 What&#39;s New?
           </h2>
           <p style={{ marginBottom: "0.75rem", color: "#4338CA" }}>
             This page demonstrates the enhanced patterns and utilities copied from the p2einferno-app:

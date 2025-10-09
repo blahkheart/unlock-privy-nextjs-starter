@@ -79,6 +79,103 @@ export interface AddLockManagerResult {
   error?: string;
 }
 
+// Update Key Pricing Types
+export interface UpdateKeyPricingParams {
+  lockAddress: Address;
+  keyPrice: bigint;
+  tokenAddress: Address;
+}
+
+export interface UpdateKeyPricingResult {
+  success: boolean;
+  transactionHash?: string;
+  error?: string;
+}
+
+// Update Lock Config Types
+export interface UpdateLockConfigParams {
+  lockAddress: Address;
+  expirationDuration: bigint;
+  maxNumberOfKeys: bigint;
+  maxKeysPerAccount: bigint;
+}
+
+export interface UpdateLockConfigResult {
+  success: boolean;
+  transactionHash?: string;
+  error?: string;
+}
+
+// Grant Keys (Bulk) Types
+export interface GrantKeysParams {
+  lockAddress: Address;
+  recipients: Address[];
+  expirationTimestamps: bigint[];
+  keyManagers: Address[];
+}
+
+export interface GrantKeysResult {
+  success: boolean;
+  transactionHash?: string;
+  tokenIds?: bigint[];
+  error?: string;
+}
+
+// Extend Key Types
+export interface ExtendKeyParams {
+  lockAddress: Address;
+  value: bigint;
+  tokenId: bigint;
+  referrer?: Address;
+  data?: `0x${string}`;
+}
+
+export interface ExtendKeyResult {
+  success: boolean;
+  transactionHash?: string;
+  error?: string;
+}
+
+// Lend Key Types
+export interface LendKeyParams {
+  lockAddress: Address;
+  from: Address;
+  recipient: Address;
+  tokenId: bigint;
+}
+
+export interface LendKeyResult {
+  success: boolean;
+  transactionHash?: string;
+  error?: string;
+}
+
+// Unlend Key Types
+export interface UnlendKeyParams {
+  lockAddress: Address;
+  recipient: Address;
+  tokenId: bigint;
+}
+
+export interface UnlendKeyResult {
+  success: boolean;
+  transactionHash?: string;
+  error?: string;
+}
+
+// Grant Key Extension Types
+export interface GrantKeyExtensionParams {
+  lockAddress: Address;
+  tokenId: bigint;
+  duration: bigint;
+}
+
+export interface GrantKeyExtensionResult {
+  success: boolean;
+  transactionHash?: string;
+  error?: string;
+}
+
 // Shared Operation State
 export interface OperationState {
   isLoading: boolean;

@@ -114,6 +114,90 @@ export const ADDITIONAL_LOCK_ABI = [
     stateMutability: "nonpayable",
     type: "function",
   },
+  // Update key pricing
+  {
+    inputs: [
+      { internalType: "uint256", name: "_keyPrice", type: "uint256" },
+      { internalType: "address", name: "_tokenAddress", type: "address" },
+    ],
+    name: "updateKeyPricing",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  // Update lock configuration
+  {
+    inputs: [
+      { internalType: "uint256", name: "_newExpirationDuration", type: "uint256" },
+      { internalType: "uint256", name: "_maxNumberOfKeys", type: "uint256" },
+      { internalType: "uint256", name: "_maxKeysPerAcccount", type: "uint256" },
+    ],
+    name: "updateLockConfig",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  // Grant keys (bulk operation)
+  {
+    inputs: [
+      { internalType: "address[]", name: "_recipients", type: "address[]" },
+      { internalType: "uint256[]", name: "_expirationTimestamps", type: "uint256[]" },
+      { internalType: "address[]", name: "_keyManagers", type: "address[]" },
+    ],
+    name: "grantKeys",
+    outputs: [
+      { internalType: "uint256[]", name: "", type: "uint256[]" },
+    ],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  // Extend key expiration
+  {
+    inputs: [
+      { internalType: "uint256", name: "_value", type: "uint256" },
+      { internalType: "uint256", name: "_tokenId", type: "uint256" },
+      { internalType: "address", name: "_referrer", type: "address" },
+      { internalType: "bytes", name: "_data", type: "bytes" },
+    ],
+    name: "extend",
+    outputs: [],
+    stateMutability: "payable",
+    type: "function",
+  },
+  // Lend key
+  {
+    inputs: [
+      { internalType: "address", name: "_from", type: "address" },
+      { internalType: "address", name: "_recipient", type: "address" },
+      { internalType: "uint256", name: "_tokenId", type: "uint256" },
+    ],
+    name: "lendKey",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  // Unlend key
+  {
+    inputs: [
+      { internalType: "address", name: "_recipient", type: "address" },
+      { internalType: "uint256", name: "_tokenId", type: "uint256" },
+    ],
+    name: "unlendKey",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  // Grant key extension
+  {
+    inputs: [
+      { internalType: "uint256", name: "_tokenId", type: "uint256" },
+      { internalType: "uint256", name: "_duration", type: "uint256" },
+    ],
+    name: "grantKeyExtension",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
 ] as const;
 
 /**

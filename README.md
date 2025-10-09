@@ -7,7 +7,7 @@ This repository provides a **production-ready** Next.js project that demonstrate
 ### Core Features
 - **Privy Authentication** – Users can log in via email, phone, OAuth or external wallets. An embedded wallet is automatically provisioned on sign‑in so that even non‑crypto users receive a wallet.
 
-- **Unlock Protocol Integration** – Deploy new locks (upgradeable or default versions), update lock pricing/configuration, grant keys, extend memberships and lend/unlend keys.
+- **Unlock Protocol Integration** – Complete lock lifecycle management: deploy locks (upgradeable or default), purchase keys, update pricing, update configuration, grant keys (single and bulk), extend memberships, lend/unlend keys temporarily, grant free extensions, and manage lock administrators.
 
 - **Dual Library Support** – Use both Ethers.js v6 and Viem for blockchain interactions, with seamless Privy wallet integration.
 
@@ -158,19 +158,48 @@ await tx.wait();
 The app exposes a form where you can specify these parameters. If you prefer to deploy a lock using the current default version, call the `createLock` method instead ([docs.unlock-protocol.com](https://docs.unlock-protocol.com)).
 ### 3. Managing Locks
 
-Once deployed, locks expose a rich API via the PublicLock interface. The starter app demonstrates several common management tasks:
+The starter provides production-ready React hooks for all lock management operations. Each hook follows a consistent pattern with loading states, error handling, and automatic permission checks:
 
-| Function | Description | Example call |
-|----------|-------------|--------------|
-| `updateKeyPricing(newPrice, tokenAddress)` | Change the price and currency of keys | `await lock.updateKeyPricing(BigInt(newPrice), tokenAddress)` |
-| `updateLockConfig(newExpiration, maxKeys, maxKeysPerAccount)` | Adjust the default expiration and supply limits | `await lock.updateLockConfig(newDur, newMax, newPerAccount)` |
-| `grantKeys(recipients, expirations, managers)` | Mint free keys to specific recipients | `await lock.grantKeys(['0xabc…'], [0n], ['0xmanager…'])` |
-| `extend(value, tokenId, referrer, data)` | Extend a key's expiration by paying the lock price | `await lock.extend(BigInt(value), tokenId, referrer, '0x')` |
-| `grantKeyExtension(tokenId, duration)` | Give extra time for free | `await lock.grantKeyExtension(tokenId, duration)` |
-| `lendKey(from, to, tokenId)` | Transfer ownership temporarily while retaining management rights | `await lock.lendKey(owner, borrower, tokenId)` |
-| `unlendKey(recipient, tokenId)` | Return full ownership to a borrower | `await lock.unlendKey(recipient, tokenId)` |
+```typescript
+import {
+  useUpdateKeyPricing,
+  useUpdateLockConfig,
+  useGrantKeys,
+  useExtendKey,
+  useLendKey,
+  useUnlendKey,
+  useGrantKeyExtension
+} from "@/hooks/unlock";
 
-Each of these functions can only be executed by accounts with the appropriate roles (e.g. lock managers or key granters). Privy's embedded wallets make it easy for non‑technical users to perform these actions by signing transactions in the browser.
+// Example: Update lock pricing
+const { updateKeyPricing, isLoading, error } = useUpdateKeyPricing();
+
+const handleUpdatePricing = async () => {
+  const result = await updateKeyPricing({
+    lockAddress: "0x...",
+    keyPrice: parseEther("0.01"),
+    tokenAddress: zeroAddress, // ETH, or ERC20 address
+  });
+
+  if (result.success) {
+    console.log("Updated:", result.transactionHash);
+  }
+};
+```
+
+**Available Lock Management Hooks:**
+
+| Hook | Description | Manager Required |
+|------|-------------|------------------|
+| `useUpdateKeyPricing` | Change key price and payment token | ✅ |
+| `useUpdateLockConfig` | Adjust expiration, max keys, and per-account limits | ✅ |
+| `useGrantKeys` | Bulk grant free keys with custom expirations | ✅ |
+| `useExtendKey` | Extend a key by paying the lock price | ❌ (payable) |
+| `useLendKey` | Lend a key temporarily to another address | ❌ (owner) |
+| `useUnlendKey` | Return a lent key to the original owner | ❌ (owner) |
+| `useGrantKeyExtension` | Grant free key extension (manager only) | ✅ |
+
+All hooks automatically handle wallet connection, permission checks, transaction submission, and receipt parsing. See the **Quick Start Guide** below for detailed examples of each hook.
 ### 4. File Structure
 
 ```
@@ -190,6 +219,7 @@ unlock-privy-nextjs-starter
 │       ├── PrivyConnectButton.tsx   # Privy wallet connect button
 │       ├── CustomDropdown.tsx       # Dropdown menu component
 │       ├── WalletDetailsModal.tsx   # Wallet details modal
+│       ├── ErrorMessage.tsx         # Reusable error display component
 │       ├── dialog.tsx               # Dialog component
 │       ├── button.tsx               # Button component
 │       └── card.tsx                 # Card component
@@ -207,6 +237,13 @@ unlock-privy-nextjs-starter
 │       ├── useDeployLock.ts             # Deploy new locks
 │       ├── useAddLockManager.ts         # Add lock managers
 │       ├── useLockManagerKeyGrant.ts    # Grant keys as manager
+│       ├── useUpdateKeyPricing.ts       # Update lock pricing
+│       ├── useUpdateLockConfig.ts       # Update lock configuration
+│       ├── useGrantKeys.ts              # Bulk grant keys
+│       ├── useExtendKey.ts              # Extend key expiration
+│       ├── useLendKey.ts                # Lend key temporarily
+│       ├── useUnlendKey.ts              # Return lent key
+│       ├── useGrantKeyExtension.ts      # Grant free key extension
 │       ├── usePrivyWriteWallet.ts       # Get writable wallet
 │       ├── types.ts                     # TypeScript types
 │       └── index.ts                     # Composite hooks
@@ -236,7 +273,11 @@ unlock-privy-nextjs-starter
 ├── abis
 │   ├── PublicLockV15.json
 │   └── UnlockV14.json
+├── styles
+│   └── globals.css                       # Tailwind CSS directives
 ├── .gitignore                            # Git ignore rules
+├── tailwind.config.js                    # Tailwind CSS configuration
+├── postcss.config.js                     # PostCSS configuration
 ├── next.config.js                        # Next.js configuration
 ├── tsconfig.json                         # TypeScript configuration
 └── package.json
@@ -469,6 +510,248 @@ function GrantKeyComponent() {
 - ✅ Support for custom key managers
 - ✅ No payment required
 
+#### Update Lock Pricing
+```typescript
+import { useUpdateKeyPricing } from "@/hooks/unlock";
+import { parseEther, zeroAddress } from "viem";
+
+function UpdatePricingComponent() {
+  const { updateKeyPricing, isLoading, error, isSuccess } = useUpdateKeyPricing();
+
+  const handleUpdatePricing = async () => {
+    const result = await updateKeyPricing({
+      lockAddress: "0x...", // Your lock address
+      keyPrice: parseEther("0.02"), // New price: 0.02 ETH
+      tokenAddress: zeroAddress, // ETH (or pass ERC20 address)
+    });
+
+    if (result.success) {
+      console.log("Pricing updated:", result.transactionHash);
+    }
+  };
+
+  return (
+    <button onClick={handleUpdatePricing} disabled={isLoading}>
+      {isLoading ? "Updating..." : "Update Pricing"}
+    </button>
+  );
+}
+```
+
+**Requirements:**
+- Connected wallet must be a lock manager
+- Includes automatic permission check before transaction
+
+#### Update Lock Configuration
+```typescript
+import { useUpdateLockConfig } from "@/hooks/unlock";
+
+function UpdateConfigComponent() {
+  const { updateLockConfig, isLoading, error, isSuccess } = useUpdateLockConfig();
+
+  const handleUpdateConfig = async () => {
+    const result = await updateLockConfig({
+      lockAddress: "0x...",
+      expirationDuration: 31536000n, // 1 year
+      maxNumberOfKeys: 2000n, // Increase to 2000 max keys
+      maxKeysPerAddress: 5n, // Allow 5 keys per address
+    });
+
+    if (result.success) {
+      console.log("Configuration updated:", result.transactionHash);
+    }
+  };
+
+  return (
+    <button onClick={handleUpdateConfig} disabled={isLoading}>
+      {isLoading ? "Updating..." : "Update Config"}
+    </button>
+  );
+}
+```
+
+**Requirements:**
+- Connected wallet must be a lock manager
+- Updates expiration, max keys, and per-address limits
+
+#### Bulk Grant Keys
+```typescript
+import { useGrantKeys } from "@/hooks/unlock";
+
+function BulkGrantComponent() {
+  const { grantKeys, isLoading, error, isSuccess } = useGrantKeys();
+
+  const handleBulkGrant = async () => {
+    const result = await grantKeys({
+      lockAddress: "0x...",
+      recipients: [
+        "0xRecipient1...",
+        "0xRecipient2...",
+        "0xRecipient3...",
+      ],
+      expirations: [
+        1735689600n, // Custom expiration timestamp
+        1735689600n,
+        0n, // 0 = default lock expiration
+      ],
+      keyManagers: [
+        "0xManager1...",
+        "0xManager2...",
+        "0xManager3...",
+      ],
+    });
+
+    if (result.success) {
+      console.log("Keys granted:", result.tokenIds);
+      console.log("Transaction:", result.transactionHash);
+    }
+  };
+
+  return (
+    <button onClick={handleBulkGrant} disabled={isLoading}>
+      {isLoading ? "Granting Keys..." : "Bulk Grant Keys"}
+    </button>
+  );
+}
+```
+
+**Key Features:**
+- ✅ Grant multiple keys in one transaction
+- ✅ Custom expiration per recipient
+- ✅ Specify key managers per key
+- ✅ Returns all token IDs created
+
+#### Extend Key Expiration
+```typescript
+import { useExtendKey } from "@/hooks/unlock";
+
+function ExtendKeyComponent() {
+  const { extendKey, isLoading, error, isSuccess } = useExtendKey();
+
+  const handleExtend = async () => {
+    const result = await extendKey({
+      lockAddress: "0x...",
+      tokenId: 123n, // Token ID to extend
+      value: parseEther("0.01"), // Payment amount
+      referrer: "0x...", // Optional referrer address
+      data: "0x", // Optional data
+    });
+
+    if (result.success) {
+      console.log("Key extended:", result.transactionHash);
+    }
+  };
+
+  return (
+    <button onClick={handleExtend} disabled={isLoading}>
+      {isLoading ? "Extending..." : "Extend Key"}
+    </button>
+  );
+}
+```
+
+**Key Features:**
+- ✅ Payable function - extends key by paying lock price
+- ✅ No manager role required
+- ✅ Anyone can extend any key by paying
+
+#### Lend Key Temporarily
+```typescript
+import { useLendKey } from "@/hooks/unlock";
+
+function LendKeyComponent() {
+  const { lendKey, isLoading, error, isSuccess } = useLendKey();
+
+  const handleLend = async () => {
+    const result = await lendKey({
+      lockAddress: "0x...",
+      from: "0xOwner...", // Current owner
+      recipient: "0xBorrower...", // Temporary recipient
+      tokenId: 123n,
+    });
+
+    if (result.success) {
+      console.log("Key lent:", result.transactionHash);
+    }
+  };
+
+  return (
+    <button onClick={handleLend} disabled={isLoading}>
+      {isLoading ? "Lending..." : "Lend Key"}
+    </button>
+  );
+}
+```
+
+**Key Features:**
+- ✅ Temporary transfer - owner retains ownership
+- ✅ Borrower gets access but can't manage
+- ✅ Can be revoked with unlendKey
+
+#### Return Lent Key
+```typescript
+import { useUnlendKey } from "@/hooks/unlock";
+
+function UnlendKeyComponent() {
+  const { unlendKey, isLoading, error, isSuccess } = useUnlendKey();
+
+  const handleUnlend = async () => {
+    const result = await unlendKey({
+      lockAddress: "0x...",
+      recipient: "0xBorrower...", // Borrower to remove
+      tokenId: 123n,
+    });
+
+    if (result.success) {
+      console.log("Key returned:", result.transactionHash);
+    }
+  };
+
+  return (
+    <button onClick={handleUnlend} disabled={isLoading}>
+      {isLoading ? "Returning..." : "Return Key"}
+    </button>
+  );
+}
+```
+
+**Key Features:**
+- ✅ Returns key to original owner
+- ✅ Removes temporary access
+- ✅ Original owner regains full control
+
+#### Grant Free Key Extension
+```typescript
+import { useGrantKeyExtension } from "@/hooks/unlock";
+
+function GrantExtensionComponent() {
+  const { grantKeyExtension, isLoading, error, isSuccess } = useGrantKeyExtension();
+
+  const handleGrantExtension = async () => {
+    const result = await grantKeyExtension({
+      lockAddress: "0x...",
+      tokenId: 123n,
+      duration: 2592000n, // 30 days in seconds
+    });
+
+    if (result.success) {
+      console.log("Extension granted:", result.transactionHash);
+    }
+  };
+
+  return (
+    <button onClick={handleGrantExtension} disabled={isLoading}>
+      {isLoading ? "Granting..." : "Grant Extension"}
+    </button>
+  );
+}
+```
+
+**Requirements:**
+- Connected wallet must be a lock manager
+- Grants free extension (no payment required)
+- Different from `extendKey` which requires payment
+
 ## 🎨 Demo Pages
 
 - **`/locks`** - Original demo with all lock management functions
@@ -616,7 +899,7 @@ User-friendly error messages with automatic parsing:
 
 ## 📦 What's Included
 
-### Hooks (14)
+### Hooks (21)
 
 **Wallet Hooks:**
 - `useSmartWalletSelection` - Intelligent wallet selection
@@ -629,7 +912,14 @@ User-friendly error messages with automatic parsing:
 - `useKeyPurchase` - Advanced key purchase with ERC20 approval
 - `useDeployLock` - Deploy new Unlock Protocol locks
 - `useAddLockManager` - Add managers to existing locks
-- `useLockManagerKeyGrant` - Grant keys as a lock manager
+- `useLockManagerKeyGrant` - Grant single keys as a lock manager
+- `useUpdateKeyPricing` - Update lock pricing and payment token
+- `useUpdateLockConfig` - Update lock configuration (expiration, max keys, limits)
+- `useGrantKeys` - Bulk grant keys with custom expirations
+- `useExtendKey` - Extend key expiration by paying lock price
+- `useLendKey` - Lend key temporarily to another address
+- `useUnlendKey` - Return lent key to original owner
+- `useGrantKeyExtension` - Grant free key extension (manager only)
 
 **Unlock Protocol Read Hooks:**
 - `useHasValidKey` - Check if user has valid key
@@ -652,7 +942,21 @@ User-friendly error messages with automatic parsing:
 - **Event Signatures** - For log parsing
 - **Factory Addresses** - Pre-configured for all major networks
 
-### Components (11)
+### Styling & UI
+- **Tailwind CSS** - Fully configured with custom theme extensions
+- **PostCSS** - Autoprefixer for cross-browser compatibility
+- **Tailwind Plugins** - Forms and animation support
+- **Global Styles** - Pre-configured with Tailwind directives in `styles/globals.css`
+- **Responsive Design** - Mobile-first utilities throughout
+
+**Tailwind Configuration:**
+The project includes a complete Tailwind setup with:
+- `tailwind.config.js` - Content paths, theme extensions, dark mode, and plugins
+- `postcss.config.js` - PostCSS processing with Tailwind and Autoprefixer
+- `styles/globals.css` - Global styles with Tailwind directives (`@tailwind base/components/utilities`)
+- Imported automatically in `pages/_app.tsx`
+
+### Components (12)
 
 **Demo Components** (`/components`):
 - `KeyPurchaseExample` - Interactive key purchase demo
@@ -665,6 +969,7 @@ User-friendly error messages with automatic parsing:
 - `PrivyConnectButton` - Full-featured wallet connect button with balance display
 - `CustomDropdown` - Dropdown menu with portal rendering
 - `WalletDetailsModal` - Detailed wallet information modal
+- `ErrorMessage` - Reusable error display with word wrapping
 - `Dialog` - Modal dialog component
 - `Button` - Reusable button component
 - `Card` - Card layout component

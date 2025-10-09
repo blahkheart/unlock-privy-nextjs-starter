@@ -64,8 +64,8 @@ export default function Home() {
             </div>
 
             <p className="text-lg text-gray-300 max-w-2xl mx-auto leading-relaxed">
-              A production-ready starter template combining Unlock Protocol's membership NFTs
-              with Privy's seamless wallet authentication. Build token-gated applications with ease.
+              A production-ready starter template combining Unlock Protocol&#39;s membership NFTs
+              with Privy&#39;s seamless wallet authentication. Build token-gated applications with ease.
             </p>
 
             {/* Connect Button */}
