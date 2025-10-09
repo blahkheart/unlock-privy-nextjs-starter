@@ -1,0 +1,30 @@
+{
+  "name": "unlock-privy-nextjs-starter",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A minimal Next.js starter template demonstrating how to authenticate users with Privy and interact with Unlock Protocol smart contracts.",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start"
+  },
+  "dependencies": {
+    "@privy-io/react-auth": "^2.20.0",
+    "@unlock-protocol/contracts": "^0.0.35",
+    "clsx": "^2.1.1",
+    "dotenv": "^16.3.1",
+    "ethers": "^6.7.0",
+    "next": "^14.0.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "viem": "2.35",
+    "tailwind-merge": "^3.3.0",   
+    "@tailwindcss/forms": "^0.5.3",
+    "tailwindcss-animate": "^1.0.7"
+  },
+  "devDependencies": {
+    "@types/react": "19.1.8",
+    "tailwindcss": "^3.1.2",
+    "typescript": "5.8.3"
+  }
+}
