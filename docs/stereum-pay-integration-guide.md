@@ -160,19 +160,28 @@ const invoice = await stereumPay.createInvoice({
 function verifyStereumWebhook(
   rawBody: string,
   signature: string,
-  secret: string
+  apiKey: string,          // Use API KEY as HMAC secret
+  timestamp: number
 ): boolean {
+  // Verify timestamp first (prevent replay attacks)
+  const now = Date.now();
+  const timeDiff = Math.abs(now - timestamp);
+  const tolerance = 2 * 60 * 1000; // 2 minutes tolerance
+  
+  if (timeDiff > tolerance) {
+    return false;
+  }
+
+  // Generate expected signature using API KEY
   const expectedSignature = crypto
-    .createHmac('sha256', secret)
+    .createHmac('sha256', apiKey)
     .update(rawBody, 'utf8')
     .digest('hex');
   
-  const expectedSig = `sha256=${expectedSignature}`;
-  
-  // Prevent timing attacks
+  // Prevent timing attacks - note: no "sha256=" prefix
   return crypto.timingSafeEqual(
-    Buffer.from(signature),
-    Buffer.from(expectedSig)
+    Buffer.from(signature, 'hex'),
+    Buffer.from(expectedSignature, 'hex')
   );
 }
 ```
@@ -223,7 +232,8 @@ pages/api/stereum/
 ```typescript
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { getKeyPrice } from '@/lib/unlock/pricing';
-import { createStereumInvoice } from '@/lib/stereum/api';
+import { createSterumPayClient, formatAmount } from '@/lib/stereum-pay/api';
+import { getClientConfig } from '@/lib/blockchain/config';
 
 export default async function handler(
   req: NextApiRequest,
@@ -234,44 +244,65 @@ export default async function handler(
   }
 
   try {
-    const { lockAddress, network, recipient, fiatCurrency = 'USD' } = req.body;
+    const { 
+      lockAddress, 
+      recipient, 
+      currency = 'USDT',
+      network = 'POLYGON',
+      customerInfo 
+    } = req.body;
 
-    // 1. Get current lock price
-    const lockPrice = await getKeyPrice(lockAddress, network);
+    // 1. Get current lock price in wei
+    const chainConfig = getClientConfig();
+    const lockPriceWei = await getKeyPrice(lockAddress, chainConfig.chainId);
     
-    // 2. Estimate gas costs
-    const estimatedGas = 0.005; // ETH - adjust based on network
+    // 2. Convert to USD equivalent (you'd use a price oracle here)
+    const ethToUsd = 2500; // Example rate - use real oracle
+    const lockPriceUsd = (Number(lockPriceWei) / 1e18) * ethToUsd;
     
-    // 3. Calculate total cost in crypto
-    const totalCostEth = lockPrice + estimatedGas;
-    
-    // 4. Convert to fiat (you'd use a price oracle here)
-    const ethToUsd = 2500; // Example rate
-    const totalCostFiat = totalCostEth * ethToUsd;
-    
-    // 5. Add Stereum processing fee
-    const processingFee = totalCostFiat * 0.03; // 3%
-    const finalPrice = totalCostFiat + processingFee;
+    // 3. Add bundled costs (gas + processing)
+    const gasCostUsd = 5; // Estimated gas cost in USD
+    const processingFee = lockPriceUsd * 0.03; // 3% processing fee
+    const totalPriceUsd = lockPriceUsd + gasCostUsd + processingFee;
 
-    // 6. Create Stereum invoice
-    const invoice = await createStereumInvoice({
-      amount: finalPrice,
-      currency: fiatCurrency,
-      description: `Unlock Protocol Key - ${lockAddress}`,
-      metadata: {
-        lockAddress,
-        network,
-        recipient,
-        lockPrice: lockPrice.toString(),
-        estimatedGas: estimatedGas.toString(),
-      },
+    // 4. Create Stereum Pay client
+    const sterumClient = createSterumPayClient({
+      apiKey: process.env.STEREUM_API_KEY!,
+      username: process.env.STEREUM_USERNAME!,
+      password: process.env.STEREUM_PASSWORD!,
+      publicKey: process.env.STEREUM_PUBLIC_KEY!,
+      baseUrl: process.env.STEREUM_BASE_URL || 'https://api.stereum.tech'
     });
 
+    // 5. Create charge
+    const chargeResult = await sterumClient.createCharge({
+      country: "BO",
+      amount: formatAmount(totalPriceUsd),
+      network: network,
+      currency: currency,
+      idempotency_key: crypto.randomUUID(),
+      charge_reason: `Unlock Protocol Key - ${lockAddress}`,
+      customer: customerInfo,
+      callback: `${process.env.BASE_URL}/api/stereum/webhook`
+    });
+
+    if (!chargeResult.success || !chargeResult.data) {
+      return res.status(500).json({ 
+        error: chargeResult.error || 'Failed to create charge' 
+      });
+    }
+
+    const charge = chargeResult.data;
+
     res.json({
-      checkoutUrl: invoice.checkout_url,
-      invoiceId: invoice.id,
-      amount: finalPrice,
-      currency: fiatCurrency,
+      paymentLink: charge.payment_link,    // Note: payment_link, not checkout_url
+      transactionId: charge.id,            // Note: id, not invoice_id
+      qrCode: charge.qr_base64,
+      amount: charge.amount,
+      currency: charge.currency,
+      status: charge.transaction_status,
+      expiresAt: new Date(charge.expiration_time).toISOString(),
+      collectingAccount: charge.collecting_account
     });
 
   } catch (error) {
@@ -285,7 +316,7 @@ export default async function handler(
 
 ```typescript
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { verifyStereumWebhook } from '@/lib/stereum/security';
+import { verifyAndParseWebhook, isTestNotification, isTransactionNotification } from '@/lib/stereum-pay/webhooks';
 import { purchaseKeyWithRelayer } from '@/lib/unlock/relayer';
 import { getLogger } from '@/lib/utils/logger';
 
@@ -300,65 +331,110 @@ export default async function handler(
   }
 
   try {
-    // 1. Verify webhook signature
-    const signature = req.headers['x-stereum-signature'] as string;
+    // 1. Get raw body for signature verification
     const rawBody = JSON.stringify(req.body);
     
-    const isValid = verifyStereumWebhook(
+    // 2. Verify webhook with correct header names
+    const verificationResult = verifyAndParseWebhook(
       rawBody,
-      signature,
-      process.env.STEREUM_WEBHOOK_SECRET!
+      {
+        'x-signature': req.headers['x-signature'] as string,     // Note: x-signature
+        'x-timestamp': req.headers['x-timestamp'] as string      // Note: x-timestamp
+      },
+      process.env.STEREUM_API_KEY!  // Use API KEY for HMAC verification
     );
 
-    if (!isValid) {
-      log.warn('Invalid webhook signature');
-      return res.status(401).end();
+    if (!verificationResult.isValid) {
+      log.warn('Webhook verification failed', { error: verificationResult.error });
+      return res.status(403).json({ error: 'Webhook verification failed' });
     }
 
-    // 2. Parse webhook data
-    const { type, data } = req.body;
+    const notification = verificationResult.notification!;
 
-    if (type === 'payment.succeeded') {
-      const { invoice_id, metadata } = data;
-      
-      // 3. Extract lock purchase details
-      const {
-        lockAddress,
-        network,
-        recipient,
-        lockPrice,
-      } = metadata;
+    // 3. Handle test notifications
+    if (isTestNotification(notification)) {
+      log.debug('Received test notification');
+      return res.status(200).json({ message: 'Test notification received' });
+    }
 
-      // 4. Execute on-chain purchase
-      log.info('Processing payment success', { invoice_id, lockAddress });
+    // 4. Handle transaction notifications
+    if (isTransactionNotification(notification)) {
+      const { transaction } = notification;
       
-      const result = await purchaseKeyWithRelayer({
-        lockAddress,
-        network: parseInt(network),
-        recipient,
-        amount: lockPrice,
+      log.info('Processing transaction notification', {
+        notification_id: notification.id,
+        transaction_id: transaction.id,
+        status: transaction.status,
+        amount: transaction.amount,
+        currency: transaction.currency
       });
 
-      if (result.success) {
-        log.info('Key purchase successful', {
-          invoice_id,
-          txHash: result.transactionHash,
-          tokenIds: result.tokenIds,
-        });
-      } else {
-        log.error('Key purchase failed', {
-          invoice_id,
-          error: result.error,
-        });
+      // Only process successful payments
+      if (transaction.status === 'PAGADO') {
+        
+        // Extract purchase details from idempotency key or metadata
+        // You would store the mapping when creating the charge
+        const purchaseIntent = await getPurchaseIntentByIdempotencyKey(
+          transaction.idempotency_key
+        );
+
+        if (purchaseIntent) {
+          // Execute on-chain key purchase
+          const result = await purchaseKeyWithRelayer({
+            lockAddress: purchaseIntent.lockAddress,
+            chainId: purchaseIntent.metadata.chainId,
+            recipient: purchaseIntent.recipientAddress,
+            amount: purchaseIntent.metadata.lockPrice
+          });
+
+          if (result.success) {
+            log.info('Key purchase successful', {
+              transaction_id: transaction.id,
+              recipient: purchaseIntent.recipientAddress,
+              txHash: result.transactionHash
+            });
+            
+            // Update purchase intent status
+            await updatePurchaseIntentStatus(
+              purchaseIntent.id, 
+              'minted', 
+              result.transactionHash
+            );
+          } else {
+            log.error('Key purchase failed', {
+              transaction_id: transaction.id,
+              error: result.error
+            });
+          }
+        }
       }
     }
 
-    res.status(200).end();
+    // Always return 200 for valid webhooks
+    res.status(200).json({ 
+      success: true, 
+      message: 'Webhook processed',
+      timestamp: new Date().toISOString() 
+    });
 
   } catch (error) {
     log.error('Webhook processing failed', { error });
-    res.status(500).end();
+    res.status(500).json({ error: 'Internal server error' });
   }
+}
+
+// Helper functions (implement these based on your database)
+async function getPurchaseIntentByIdempotencyKey(idempotencyKey: string) {
+  // Retrieve purchase intent from database using idempotency key
+  // Return: { lockAddress, recipientAddress, metadata: { chainId, lockPrice } }
+}
+
+async function updatePurchaseIntentStatus(
+  intentId: string, 
+  status: string, 
+  transactionHash?: string
+) {
+  // Update purchase intent status in database
 }
 ```
 
@@ -366,23 +442,47 @@ export default async function handler(
 
 ```typescript
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { getStereumInvoiceStatus } from '@/lib/stereum/api';
+import { createSterumPayClient } from '@/lib/stereum-pay/api';
 
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse
 ) {
-  const { invoiceId } = req.query;
+  const { transactionId } = req.query;
 
   try {
-    const status = await getStereumInvoiceStatus(invoiceId as string);
+    // Create Stereum Pay client
+    const sterumClient = createSterumPayClient({
+      apiKey: process.env.STEREUM_API_KEY!,
+      username: process.env.STEREUM_USERNAME!,
+      password: process.env.STEREUM_PASSWORD!,
+      publicKey: process.env.STEREUM_PUBLIC_KEY!,
+      baseUrl: process.env.STEREUM_BASE_URL || 'https://api.stereum.tech'
+    });
+
+    const statusResult = await sterumClient.getTransactionStatus(transactionId as string);
+    
+    if (!statusResult.success || !statusResult.data) {
+      return res.status(500).json({ 
+        error: statusResult.error || 'Failed to get status' 
+      });
+    }
+
+    const status = statusResult.data;
     
     res.json({
-      status: status.status, // 'pending', 'paid', 'expired', etc.
+      id: status.id,
+      status: status.status,           // 'PENDIENTE', 'PAGADO', 'CANCELADO', etc.
+      statusDescription: status.status_description,
       amount: status.amount,
       currency: status.currency,
-      paidAt: status.paid_at,
-      metadata: status.metadata,
+      country: status.country,
+      fee: status.fee,
+      createdAt: new Date(status.created_date).toISOString(),
+      expiresAt: new Date(status.expiration_time).toISOString(),
+      paidAt: status.payment_date ? new Date(status.payment_date).toISOString() : null,
+      idempotencyKey: status.idempotency_key,
+      onMainNet: status.on_main_net
     });
 
   } catch (error) {
@@ -567,83 +667,189 @@ end
 
 ## Stereum Pay API Integration
 
-### 1. **Authentication**
+### 1. **Authentication with JWT and RSA Encryption**
 
-All Stereum Pay API calls require authentication using your API key:
+Stereum Pay uses JWT authentication with RSA-encrypted passwords for security:
 
 ```typescript
-const STEREUM_API_KEY = process.env.STEREUM_API_KEY;
-const STEREUM_BASE_URL = process.env.STEREUM_BASE_URL || 'https://api.stereum-pay.com';
+import crypto from 'crypto';
 
-const headers = {
-  'Authorization': `Bearer ${STEREUM_API_KEY}`,
-  'Content-Type': 'application/json',
-};
+// Step 1: Encrypt password with RSA public key
+function encryptPassword(password: string, publicKeyPem: string): string {
+  const publicKey = crypto.createPublicKey({
+    key: publicKeyPem,
+    format: 'pem',
+    type: 'spki'
+  });
+
+  const encrypted = crypto.publicEncrypt(
+    {
+      key: publicKey,
+      padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
+      oaepHash: 'sha256'
+    },
+    Buffer.from(password, 'utf8')
+  );
+
+  return encrypted.toString('base64');
+}
+
+// Step 2: Obtain JWT token
+async function obtainJWTToken(config: {
+  username: string;
+  password: string;
+  publicKey: string;
+  baseUrl: string;
+}) {
+  const encryptedPassword = encryptPassword(config.password, config.publicKey);
+  
+  const response = await fetch(`${config.baseUrl}/api/v1/auth/token`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      username: config.username,
+      password: encryptedPassword
+    })
+  });
+
+  if (!response.ok) {
+    throw new Error(`Authentication failed: ${response.statusText}`);
+  }
+
+  const tokenData = await response.json();
+  return tokenData.access_token; // Valid for 8 hours
+}
 ```
 
-### 2. **Create Invoice**
+### 2. **Create Transaction Charge**
 
 ```typescript
-async function createStereumInvoice(params: {
-  amount: number;
-  currency: string;
+async function createStereumCharge(params: {
+  amount: string;          // Decimal string: "100.00"
+  currency: 'USDT' | 'USDC' | 'BOB';
+  network: 'POLYGON' | 'CSL';
+  customer: {
+    name: string;          // Required for BOB payments
+    lastname: string;      // Required for BOB payments
+    document_number: string; // Required for BOB payments
+    email?: string;
+    phone?: string;
+  };
   description: string;
-  metadata: Record<string, string>;
 }) {
-  const response = await fetch(`${STEREUM_BASE_URL}/v1/invoices`, {
+  const authToken = await obtainJWTToken(sterumConfig);
+  
+  const response = await fetch(`${STEREUM_BASE_URL}/api/v1/transactions/create-charge`, {
     method: 'POST',
-    headers,
+    headers: {
+      'Authorization': `Bearer ${authToken}`,
+      'Content-Type': 'application/json',
+    },
     body: JSON.stringify({
-      amount: Math.round(params.amount * 100), // Convert to cents
-      currency: params.currency.toLowerCase(),
-      description: params.description,
-      metadata: params.metadata,
-      success_url: `${process.env.BASE_URL}/success`,
-      cancel_url: `${process.env.BASE_URL}/cancel`,
+      country: "BO",
+      amount: params.amount,        // Use decimal format, not cents
+      network: params.network,
+      currency: params.currency,
+      idempotency_key: crypto.randomUUID(),
+      charge_reason: params.description,
+      customer: params.customer,
+      reservation_validity_time: 10  // QR code validity in minutes
     }),
   });
 
   if (!response.ok) {
-    throw new Error(`Stereum API error: ${response.statusText}`);
+    const error = await response.json();
+    throw new Error(`Stereum API error: ${error.message}`);
   }
 
   return response.json();
 }
 ```
 
-### 3. **Get Invoice Status**
+### 3. **Get Transaction Status**
 
 ```typescript
-async function getStereumInvoiceStatus(invoiceId: string) {
-  const response = await fetch(`${STEREUM_BASE_URL}/v1/invoices/${invoiceId}`, {
-    headers,
-  });
+async function getStereumTransactionStatus(transactionId: string) {
+  const authToken = await obtainJWTToken(sterumConfig);
+  
+  const response = await fetch(
+    `${STEREUM_BASE_URL}/api/v1/transactions/${transactionId}/verify`,
+    {
+      headers: {
+        'Authorization': `Bearer ${authToken}`,
+        'Content-Type': 'application/json',
+      }
+    }
+  );
 
   if (!response.ok) {
-    throw new Error(`Stereum API error: ${response.statusText}`);
+    const error = await response.json();
+    throw new Error(`Status check failed: ${error.message}`);
   }
 
   return response.json();
 }
 ```
 
-### 4. **Webhook Events**
+### 4. **Webhook Notification Structure**
 
-Stereum Pay sends these webhook events:
+Stereum Pay sends webhook notifications with this structure:
 
 ```typescript
-interface StereumWebhookEvent {
+interface SterumWebhookNotification {
+  notification_type: "transaction" | "test";
   id: string;
-  type: 'payment.succeeded' | 'payment.failed' | 'payment.pending';
-  created: number;
-  data: {
-    invoice_id: string;
+  transaction: {
+    country: string;
     amount: number;
+    amount_received?: number;    // Actual amount received
+    status: "PENDIENTE" | "PAGADO" | "CANCELADO" | "ERROR";
+    status_description: string;
     currency: string;
-    status: string;
-    paid_at?: number;
-    metadata: Record<string, string>;
+    network?: string;
+    id: string;
+    created_date: number;       // Timestamp in milliseconds
+    payment_date?: number;      // When payment was confirmed
+    fee: number;
+    idempotency_key: string;
+    on_main_net: boolean;
   };
+  timestamp: number;            // Timestamp in milliseconds
+}
+```
+
+### 5. **Response Format Examples**
+
+**Create Charge Response:**
+```typescript
+{
+  "amount": 1.00,
+  "currency": "USDT", 
+  "network": "POLYGON",
+  "id": "e7915e24-6ef1-4a81-8b67-70f36d0423ef",
+  "qr_base64": "[BASE64_QR_CODE]",
+  "payment_link": "https://stereum-payof.vercel.app/?session=...",
+  "transaction_status": "PENDIENTE",
+  "on_main_net": false,
+  "collecting_account": "0xb4e2c3868bb3acb9ff2efead78477e088bca49cb",
+  "expiration_time": 1750169018821
+}
+```
+
+**Transaction Status Response:**
+```typescript
+{
+  "id": "e7915e24-6ef1-4a81-8b67-70f36d0423ef",
+  "amount": 1.00,
+  "currency": "USDT",
+  "country": "BO", 
+  "status": "PAGADO",
+  "fee": 0,
+  "created_date": 1746854277163,
+  "status_description": "Pagado",
+  "on_main_net": false,
+  "idempotency_key": "8f1cfa93-dd68-4c33-b419-959bd7b9c45d",
+  "expiration_time": 1750169018821
 }
 ```
 
@@ -1102,9 +1308,13 @@ test('complete Stereum payment flow', async ({ page }) => {
 
 ```bash
 # .env.local
-STEREUM_API_KEY=sk_test_xxxxxxxxxxxxxxxxx
-STEREUM_WEBHOOK_SECRET=whsec_xxxxxxxxxxxxxxxxx
-STEREUM_BASE_URL=https://api-sandbox.stereum-pay.com  # Use sandbox for testing
+STEREUM_API_KEY=your_api_key_here
+STEREUM_USERNAME=your_api_username
+STEREUM_PASSWORD=your_api_user_password
+STEREUM_PUBLIC_KEY="-----BEGIN PUBLIC KEY-----
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8A...
+-----END PUBLIC KEY-----"
+STEREUM_BASE_URL=https://api.stereum.tech
 
 RELAYER_PRIVATE_KEY=0x1234567890abcdef...
 BASE_SEPOLIA_RPC_URL=https://base-sepolia.g.alchemy.com/v2/YOUR-KEY
@@ -1116,9 +1326,13 @@ BASE_URL=http://localhost:3000  # Your app's base URL
 
 ```bash
 # .env.production
-STEREUM_API_KEY=sk_live_xxxxxxxxxxxxxxxxx
-STEREUM_WEBHOOK_SECRET=whsec_xxxxxxxxxxxxxxxxx
-STEREUM_BASE_URL=https://api.stereum-pay.com
+STEREUM_API_KEY=your_production_api_key
+STEREUM_USERNAME=your_production_username
+STEREUM_PASSWORD=your_production_password
+STEREUM_PUBLIC_KEY="-----BEGIN PUBLIC KEY-----
+[Production RSA Public Key from Stereum team]
+-----END PUBLIC KEY-----"
+STEREUM_BASE_URL=https://api.stereum.tech
 
 RELAYER_PRIVATE_KEY=0x1234567890abcdef...
 BASE_RPC_URL=https://mainnet.base.org
