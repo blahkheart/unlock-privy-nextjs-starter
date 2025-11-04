@@ -6,7 +6,7 @@
 
 ## Executive Summary
 
-This document provides a **direct, production-ready integration pattern** for adding Stereum Pay fiat payments to Unlock Protocol applications. While implemented as a reference in this Next.js codebase, the patterns are designed to be **framework-agnostic** and adaptable to any tech stack.
+This document provides a **direct, integration pattern** for adding Stereum Pay fiat payments to Unlock Protocol applications. While a reference is available in https://github.com/blahkheart/unlock-privy-nextjs-starter repository, the patterns are designed to be **framework-agnostic** and adaptable to any tech stack.
 
 **Key Benefits:**
 - ✅ **Simple & Direct**: 3 API endpoints, minimal complexity
@@ -21,7 +21,6 @@ This document provides a **direct, production-ready integration pattern** for ad
 
 ### 1. **Simplicity Over Premature Abstraction**
 - Direct integration with Stereum Pay API
-- No unnecessary provider abstraction layers
 - Minimal dependencies and moving parts
 
 ### 2. **Framework-Agnostic Patterns**
@@ -109,16 +108,7 @@ This document provides a **direct, production-ready integration pattern** for ad
 
 ---
 
-## Business Model Solution
-
-### The Cost Funding Problem (Solved)
-
-**Traditional Problem**: Developers must fund a "relayer wallet" with crypto to cover:
-- Lock purchase price (e.g., 0.01 ETH)
-- Gas fees (0.002-0.005 ETH)
-- This creates unsustainable cost burden
-
-**Our Solution: Bundled Pricing**
+**Bundled Pricing Model**
 
 ```typescript
 // Calculate total cost upfront
@@ -1362,94 +1352,65 @@ Events: payment.succeeded, payment.failed
 
 ## Reference Implementation Plan
 
-### Phase 1: Core Integration (Week 1)
+### Phase 1: Core Integration
 
-**Day 1-2: API Foundation**
+**API Foundation**
 - [ ] Create `/api/stereum/checkout` endpoint
 - [ ] Create `/api/stereum/webhook` endpoint  
 - [ ] Create `/api/stereum/status` endpoint
 - [ ] Implement webhook signature verification
 - [ ] Add comprehensive error handling
 
-**Day 3-4: Stereum API Integration**
+**Stereum API Integration**
 - [ ] Implement `createStereumInvoice` function
 - [ ] Implement `getStereumInvoiceStatus` function
 - [ ] Add retry logic for API calls
 - [ ] Create proper TypeScript interfaces
 
-**Day 5: Relayer Integration**
+**Relayer Integration**
 - [ ] Create relayer service for key purchases
-- [ ] Integrate with existing `useKeyPurchase` patterns
 - [ ] Implement proper gas estimation
 - [ ] Add transaction monitoring
 
-### Phase 2: Frontend Components (Week 2)
+### Phase 2: Frontend Components
 
-**Day 1-2: UI Components**
+**UI Components**
 - [ ] Create `StereumCheckoutButton` component
 - [ ] Create payment status tracking hook
 - [ ] Add success/failure pages
 - [ ] Integrate with existing UI patterns
 
-**Day 3-4: User Experience**
+**User Experience**
 - [ ] Add loading states and transitions
 - [ ] Implement proper error messages
 - [ ] Add payment confirmation flow
 - [ ] Create mobile-responsive design
 
-**Day 5: Integration Testing**
+**Integration Testing**
 - [ ] End-to-end testing of complete flow
 - [ ] Test error scenarios and edge cases
 - [ ] Validate webhook processing
 - [ ] Performance testing
 
-### Phase 3: Documentation & Polish (Week 3)
+### Phase 3: Documentation & Polish
 
-**Day 1-2: Documentation**
+**Documentation**
 - [ ] Complete setup instructions
-- [ ] Code examples for other frameworks
+- [ ] Code examples for other usage
 - [ ] Troubleshooting guide
 - [ ] Security best practices
 
-**Day 3-4: Production Readiness**
+**Production Readiness**
 - [ ] Add monitoring and alerts
 - [ ] Implement proper logging
 - [ ] Security audit
 - [ ] Performance optimization
 
-**Day 5: Launch Preparation**
-- [ ] Final testing in staging environment
-- [ ] Documentation review
-- [ ] Demo preparation
-- [ ] Community announcement
-
----
-
-## Success Metrics
-
-### Technical Metrics
-- **Integration Time**: < 1 day for basic setup
-- **API Response Time**: < 500ms for checkout creation
-- **Webhook Processing**: < 2 seconds end-to-end
-- **Error Rate**: < 1% for successful payments
-
-### Business Metrics
-- **Conversion Rate**: Track fiat vs crypto payment completion
-- **Developer Adoption**: Number of implementations
-- **Payment Volume**: Total value processed
-- **User Satisfaction**: Feedback and support requests
-
-### Reliability Metrics
-- **Uptime**: 99.9% availability
-- **Webhook Delivery**: 99.5% success rate
-- **Failed Payments**: < 0.1% due to technical issues
-- **Recovery Time**: < 5 minutes for issues
-
 ---
 
 ## Conclusion
 
-This guide provides a **production-ready, framework-agnostic pattern** for integrating Stereum Pay with Unlock Protocol. The implementation prioritizes:
+This guide provides a **basic framework** for integrating Stereum Pay with Unlock Protocol. The implementation prioritizes:
 
 - **Simplicity**: Minimal moving parts, easy to understand
 - **Reliability**: Proper error handling, retry logic, and monitoring
@@ -1457,16 +1418,5 @@ This guide provides a **production-ready, framework-agnostic pattern** for integ
 - **Sustainability**: Bundled pricing model eliminates developer funding burden
 - **Adaptability**: Framework-agnostic patterns work across tech stacks
 
-**Next Steps:**
-1. Review and adapt patterns for your framework
-2. Set up Stereum Pay account and obtain API credentials
-3. Implement the three core API endpoints
-4. Test with Stereum Pay sandbox environment
-5. Deploy to production with proper monitoring
-
 **Support:**
-- Framework-specific examples available in repository
-- Detailed troubleshooting guide for common issues
-- Community examples and contributions welcome
-
-This approach provides a **solid foundation** for fiat payments in Unlock Protocol while maintaining the flexibility for future enhancements and provider integrations.
+- Framework-specific examples available in repository https://github.com/blahkheart/unlock-privy-nextjs-starter
